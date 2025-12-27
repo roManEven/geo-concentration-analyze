@@ -6,7 +6,7 @@ import pandas as pd
 
 # --- КОНФИГУРАЦИЯ ---
 # ЗАМЕНИТЕ НА ВАШУ АКТУАЛЬНУЮ ССЫЛКУ ИЗ NGROK
-BACKEND_URL = "https://julietta-aquicultural-samara.ngrok-free.dev/analyze"
+BACKEND_URL = st.secrets["MY_BACKEND_LINK"] + "/analyze"
 
 st.set_page_config(page_title="Картограф концентраций", layout="wide")
 
@@ -121,4 +121,5 @@ if st.session_state.results:
 st.write("---")
 
 st.caption("Разработка: Python + FastAPI + Streamlit + Ngrok")
+
 
