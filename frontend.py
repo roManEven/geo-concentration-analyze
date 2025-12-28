@@ -3,123 +3,120 @@ import requests
 import folium
 from streamlit_folium import st_folium
 import pandas as pd
-from folium.plugins import BeautifyIcon
 
 # --- КОНФИГУРАЦИЯ ---
-# ВНИМАНИЕ: Убедитесь, что эта ссылка совпадает с той, что выдал ngrok при запуске
-BACKEND_URL = "BACKEND_URL = st.secrets["MY_BACKEND_LINK"] + "/analyze"
+# ЗАМЕНИТЕ НА ВАШУ АКТУАЛЬНУЮ ССЫЛКУ ИЗ NGROK
+BACKEND_URL = st.secrets["MY_BACKEND_LINK"] + "/analyze"
 
-st.set_page_config(page_title="Картограф зон", layout="wide")
+st.set_page_config(page_title="Картограф концентраций", layout="wide")
 
-# Инициализация состояния
+# Инициализация состояния (чтобы данные не исчезали)
 if "results" not in st.session_state:
     st.session_state.results = None
 
-st.title("🛰️ Анализатор гео-концентраций")
+st.title("📊 Глобальный анализатор координат")
+st.info("Интерфейс работает в облаке, вычисления — на вашем ПК дома.")
 
-# --- САЙДБАР ---
+# --- ПАРАМЕТРЫ В БОКОВОЙ ПАНЕЛИ ---
 with st.sidebar:
-    st.header("⚙️ Настройки")
-    radius = st.number_input("Радиус охвата (м)", 10, 5000, 500)
-    min_pts = st.number_input("Мин. точек в зоне", 1, 100, 5)
+    st.header("⚙️ Настройки анализа")
+    radius = st.number_input("Радиус зоны (метры)", min_value=10, max_value=5000, value=500)
+    min_points = st.number_input("Мин. точек для зоны", min_value=1, max_value=100, value=5)
     st.write("---")
-    if st.button("🗑️ Очистить данные"):
+    if st.button("🗑️ Сбросить всё"):
         st.session_state.results = None
         st.rerun()
 
-# --- ЗАГРУЗКА ФАЙЛА ---
-uploaded_file = st.file_uploader("Загрузите Excel (.xlsx) с координатами", type=["xlsx"])
+# --- ЗАГРУЗКА И ОТПРАВКА ---
+uploaded_file = st.file_uploader("Загрузите файл Excel (.xlsx)", type=["xlsx"])
 
 if uploaded_file:
-    if st.button("🚀 Провести анализ", type="primary"):
-        with st.spinner("Запрос к вашему ПК через ngrok..."):
+    if st.button("🚀 Запустить расчет", type="primary"):
+        with st.spinner("Файл обрабатывается..."):
             try:
-                files = {"file": (uploaded_file.name, uploaded_file.getvalue(), 
-                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
-                data = {"radius": radius, "min_points": min_pts}
-                
-                response = requests.post(BACKEND_URL, files=files, data=data, timeout=30)
-                
+                files = {"file": (uploaded_file.name, uploaded_file.getvalue(),
+                                  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+                payload = {"radius": radius, "min_points": min_points}
+
+                response = requests.post(BACKEND_URL, files=files, data=payload)
+
                 if response.status_code == 200:
                     st.session_state.results = response.json()
-                    st.success("Данные получены!")
+                    st.success("Данные успешно получены!")
                 else:
-                    st.error(f"Сервер на ПК ответил ошибкой: {response.status_code}")
-                    st.info("Проверьте, запущен ли скрипт бэкенда на компьютере.")
+                    st.error(f"Ошибка связи с ПК. Код: {response.status_code}")
             except Exception as e:
-                st.error(f"Не удалось соединиться с ПК: {e}")
+                st.error(f"Не удалось достучаться до сервера: {e}")
 
-# --- КАРТА И РЕЗУЛЬТАТЫ ---
+# --- ВИЗУАЛИЗАЦИЯ ---
 if st.session_state.results:
     res = st.session_state.results
-    
+
     if res.get("status") == "ok":
-        # Метрики сверху
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Обработано точек", res.get("total_parsed", 0))
-        m2.metric("Найдено зон", len(res.get("zones", [])))
-        m3.metric("Радиус", f"{radius} м")
+        # Метрики
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Всего точек", res.get("total_parsed", 0))
+        c2.metric("Найдено зон", len(res.get("zones", [])))
+        c3.metric("Радиус", f"{radius} м")
 
-        # Настройка карты
-        center = res["zones"][0]["center"] if res.get("zones") else [55.75, 37.62]
-        m = folium.Map(location=center, zoom_start=12, tiles="CartoDB positron")
+        # Создание карты
+        # Центрируем на первой точке или на Москве по умолчанию
+        start_pos = res["all_points"][0] if res.get("all_points") else [55.75, 37.62]
+        m = folium.Map(location=start_pos, zoom_start=11, tiles="CartoDB positron")
 
-        # 1. Отрисовка всех точек (синие мелкие)
+        # 1. Рисуем все исходные точки (маленькие синие кружки)
         if res.get("all_points"):
             for p in res["all_points"]:
                 folium.CircleMarker(
-                    location=p, radius=2, color="#3498db", fill=True, weight=1
+                    location=p,
+                    radius=3,
+                    color="blue",
+                    fill=True,
+                    fill_opacity=0.4,
+                    weight=1
                 ).add_to(m)
 
-        # 2. Отрисовка Зон (логотипы-маркеры)
+        # 2. Рисуем зоны концентрации (красные маркеры + круги)
         if res.get("zones"):
             for i, zone in enumerate(res["zones"]):
-                # Создаем стильный логотип-маркер
-                b_icon = BeautifyIcon(
-                    icon='star', 
-                    inner_icon_style='color:white;font-size:14px;',
-                    background_color='#e74c3c',
-                    border_color='#c0392b',
-                    border_width=2,
-                    number=i+1
-                )
-                
-                # Попап с информацией
-                html_info = f"""
-                <div style='width:180px; font-family:sans-serif;'>
-                    <b style='color:#e74c3c;'>Зона №{i+1}</b><br>
+                # Маркер с адресом в Popup
+                popup_text = f"""
+                <div style='width:200px'>
+                    <b>Зона №{i + 1}</b><br>
                     <b>Точек:</b> {zone['count']}<br>
-                    <b>Адрес:</b> {zone.get('address', 'н/д')}
+                    <b>Адрес:</b> {zone.get('address', 'Не определен')}
                 </div>
                 """
-                
                 folium.Marker(
                     location=zone["center"],
-                    tooltip=f"Зона {i+1}",
-                    popup=folium.Popup(html_info, max_width=250),
-                    icon=b_icon
+                    popup=folium.Popup(popup_text, max_width=300),
+                    tooltip=f"Зона {i + 1} ({zone['count']} точ.)",
+                    icon=folium.Icon(color="red", icon="star")
                 ).add_to(m)
 
                 # Круг радиуса
                 folium.Circle(
                     location=zone["center"],
                     radius=radius,
-                    color="#e74c3c",
+                    color="red",
                     fill=True,
-                    fill_opacity=0.1,
-                    weight=1
+                    fill_opacity=0.15
                 ).add_to(m)
 
-        # Вывод карты
-        st_folium(m, width="100%", height=600, key="main_map")
+        # Отображение
+        st.subheader("🗺️ Интерактивная карта результатов")
+        st_folium(m, width="100%", height=650, key="geo_map")
 
-        # Таблица внизу
-        with st.expander("Посмотреть таблицу зон"):
-            df = pd.DataFrame(res["zones"])
-            st.dataframe(df, use_container_width=True)
+        # Таблица результатов
+        if res.get("zones"):
+            st.subheader("📝 Список зон")
+            zones_df = pd.DataFrame(res["zones"])
+            # Немного причешем таблицу для отображения
+            zones_df.columns = ['Центр (Lat, Lon)', 'Кол-во точек', 'Адрес']
+            st.dataframe(zones_df, use_container_width=True)
     else:
-        st.error(f"Бэкенд вернул ошибку: {res.get('message')}")
+        st.error(f"Ошибка бэкенда: {res.get('message')}")
 
+# Подвал
 st.write("---")
-st.caption("Статус туннеля: ngrok активен")
-
+st.caption("Разработка: Python + FastAPI + Streamlit + Ngrok")
