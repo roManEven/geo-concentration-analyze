@@ -97,14 +97,7 @@ if st.session_state.results:
             start_pos = [55.75, 37.62]  # Координаты Москвы по умолчанию
         
         # Создаём карту БЕЗ логотипа Leaflet (attributionControl=False)
-        m = folium.Map(
-            location=start_pos,
-            zoom_start=11,
-            tiles='{x}&y={y}&z={z}',
-            attr=' ',
-            control_scale=True,
-            attribution_control=False
-        )
+        m = folium.Map( location=start_pos, zoom_start=11, tiles='{x}&y={y}&z={z}', attr=' ', control_scale=True, attribution_control=False )
         
         # Отображаем все точки
         if res.get("all_points"):
@@ -213,3 +206,4 @@ if st.session_state.results:
 # Информация о приложении в футере
 st.markdown("---")
 st.caption("Картограф • Система анализа географических данных • v1.0")
+
