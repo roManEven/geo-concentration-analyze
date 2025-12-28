@@ -125,3 +125,4 @@ st.caption("Разработка: Python + FastAPI + Streamlit + Ngrok")
 
 
 
+
