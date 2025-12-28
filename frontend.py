@@ -1,53 +1,66 @@
 import streamlit as st
-import folium
 import requests
-import pandas as pd
+import folium
 from streamlit_folium import st_folium
+import pandas as pd
+
+# Конфигурация бэкенда
+BACKEND_URL = st.secrets["MY_BACKEND_LINK"] + "/analyze"
 
 # Конфигурация страницы
-BACKEND_URL = st.secrets["MY_BACKEND_LINK"] + "/analyze"
-st.set_page_config(page_title="Картограф", layout="wide")
+st.set_page_config(
+    page_title="Картограф",
+    layout="wide",
+    page_icon="🗺️"
+)
 
-# Инициализация состояния
+# Инициализация состояния сессии
 if "results" not in st.session_state:
     st.session_state.results = None
 
-st.title("📊 Глобальный анализатор")
+# Заголовок приложения
+st.title("🗺️ Глобальный анализатор географических данных")
 
 # Боковая панель с настройками
 with st.sidebar:
-    st.header("⚙️ Настройки")
+    st.header("⚙️ Настройки анализа")
     
     radius = st.number_input(
-        "Радиус (м)",
+        "Радиус кластеризации (м)",
         min_value=10,
         value=500,
         help="Радиус для поиска соседних точек"
     )
     
     min_points = st.number_input(
-        "Мин. точек",
+        "Минимальное количество точек",
         min_value=1,
         value=5,
         help="Минимальное количество точек для формирования зоны"
     )
     
-    if st.button("🗑️ Сброс", use_container_width=True):
+    st.markdown("---")
+    
+    if st.button("🗑️ Очистить результаты", type="secondary", use_container_width=True):
         st.session_state.results = None
         st.rerun()
 
-# Загрузка файла
+# Область загрузки файла
+st.subheader("📤 Загрузка данных")
 uploaded_file = st.file_uploader(
-    "Загрузите Excel файл",
+    "Загрузите Excel файл с координатами",
     type=["xlsx"],
-    help="Поддерживаются только файлы формата .xlsx"
+    help="Файл должен содержать колонки с координатами (широта и долгота)"
 )
 
+# Кнопка запуска анализа
 if uploaded_file:
+    st.success(f"✅ Файл загружен: **{uploaded_file.name}**")
+    
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         if st.button("🚀 Запуск анализа", type="primary", use_container_width=True):
-            with st.spinner("Обработка данных..."):
+            with st.spinner("🔍 Анализируем данные..."):
                 try:
                     # Подготовка файла для отправки
                     files = {
@@ -58,76 +71,87 @@ if uploaded_file:
                         )
                     }
                     
-                    # Подготовка параметров
+                    # Параметры запроса
                     payload = {
                         "radius": radius,
                         "min_points": min_points
                     }
                     
-                    # Отправка запроса
+                    # Отправка запроса на бэкенд
                     response = requests.post(
                         BACKEND_URL,
                         files=files,
                         data=payload,
-                        timeout=60
+                        timeout=30
                     )
                     
+                    # Обработка ответа
                     if response.status_code == 200:
                         st.session_state.results = response.json()
-                        st.success("Анализ успешно завершен!")
+                        st.success("✅ Анализ успешно завершен!")
                     else:
-                        st.error(f"Ошибка связи с сервером: {response.status_code}")
+                        st.error(f"❌ Ошибка сервера: {response.status_code}")
                         
                 except requests.exceptions.Timeout:
-                    st.error("Превышено время ожидания ответа от сервера")
+                    st.error("⏱️ Превышено время ожидания ответа")
                 except requests.exceptions.ConnectionError:
-                    st.error("Не удалось подключиться к серверу")
+                    st.error("🔌 Ошибка подключения к серверу")
                 except Exception as e:
-                    st.error(f"Ошибка: {e}")
+                    st.error(f"⚠️ Ошибка: {str(e)}")
 
 # Отображение результатов
 if st.session_state.results:
     res = st.session_state.results
     
     if res.get("status") == "ok":
-        # Определяем начальную позицию карты
+        # Определение начальной позиции карты
         if res.get("all_points") and len(res["all_points"]) > 0:
             start_pos = res["all_points"][0]
         else:
-            start_pos = [55.75, 37.62]  # Координаты Москвы по умолчанию
+            start_pos = [55.75, 37.62]  # Москва по умолчанию
         
-        # Создаём карту БЕЗ логотипа Leaflet (attributionControl=False)
-        m = folium.Map( location=start_pos, zoom_start=11, tiles='{x}&y={y}&z={z}', attr=' ', control_scale=True, attribution_control=False )
+        # КАРТА БЕЗ ЛОГОТИПОВ НА РУССКОМ
+        m = folium.Map(
+            location=start_pos,
+            zoom_start=11,
+            tiles='{x}&y={y}&z={z}',
+            attr=' ',
+            control_scale=True,
+            attribution_control=False
+        )
         
-        # Отображаем все точки
+        # Отображение статистики
         if res.get("all_points"):
             points_count = len(res["all_points"])
-            st.caption(f"Общее количество точек: **{points_count}**")
-            
+            st.caption(f"📊 Всего точек: **{points_count}**")
+        
+        if res.get("zones"):
+            zones_count = len(res["zones"])
+            st.caption(f"📍 Найдено зон концентрации: **{zones_count}**")
+        
+        # Отображение всех точек
+        if res.get("all_points"):
             for point in res["all_points"]:
                 folium.CircleMarker(
                     location=point,
                     radius=3,
-                    color="blue",
+                    color="#1E88E5",
                     fill=True,
-                    fill_color="blue",
+                    fill_color="#1E88E5",
                     fill_opacity=0.7,
                     weight=1
                 ).add_to(m)
         
-        # Отображаем зоны
+        # Отображение зон концентрации
         if res.get("zones"):
-            zones_count = len(res["zones"])
-            st.caption(f"Найдено зон концентрации: **{zones_count}**")
-            
             for i, zone in enumerate(res["zones"], 1):
-                # Создаем всплывающее окно
+                # Всплывающее окно с информацией
                 popup_text = f"""
-                <div style='font-family: Arial, sans-serif;'>
+                <div style='font-family: Arial; min-width: 180px;'>
                     <h4 style='margin-bottom: 8px;'>Зона {i}</h4>
-                    <p style='margin: 4px 0;'><b>Количество точек:</b> {zone['count']}</p>
-                    <p style='margin: 4px 0;'><b>Центр зоны:</b></p>
-                    <p style='margin: 4px 0;'>
+                    <p style='margin: 5px 0;'><b>Точек:</b> {zone['count']}</p>
+                    <p style='margin: 5px 0;'><b>Центр:</b></p>
+                    <p style='margin: 5px 0; font-size: 12px;'>
                         {zone['center'][0]:.6f}, {zone['center'][1]:.6f}
                     </p>
                 </div>
@@ -137,23 +161,27 @@ if st.session_state.results:
                 folium.Marker(
                     location=zone["center"],
                     popup=folium.Popup(popup_text, max_width=250),
-                    icon=folium.Icon(color="red", icon="info-sign"),
-                    tooltip=f"Зона {i} ({zone['count']} точек)"
+                    icon=folium.Icon(
+                        color="red",
+                        icon="info-sign",
+                        prefix="fa"
+                    ),
+                    tooltip=f"Зона {i}"
                 ).add_to(m)
                 
-                # Круг зоны
+                # Область зоны
                 folium.Circle(
                     location=zone["center"],
                     radius=radius,
-                    color="red",
+                    color="#D32F2F",
                     fill=True,
-                    fill_color="red",
+                    fill_color="#D32F2F",
                     fill_opacity=0.15,
                     weight=2,
                     dash_array="5, 5"
                 ).add_to(m)
         
-        # Отображаем карту в Streamlit
+        # Отображение карты
         st_folium(
             m,
             width="100%",
@@ -161,49 +189,55 @@ if st.session_state.results:
             returned_objects=[]
         )
         
-        # Отображаем таблицу зон
+        # Таблица с результатами
         if res.get("zones"):
-            st.subheader("📋 Результаты анализа зон")
+            st.subheader("📋 Детализация зон концентрации")
             
-            # Подготавливаем данные для таблицы
+            # Подготовка данных для таблицы
             zones_data = []
             for i, zone in enumerate(res["zones"], 1):
                 zones_data.append({
-                    "№ зоны": i,
+                    "№": i,
                     "Широта центра": f"{zone['center'][0]:.6f}",
                     "Долгота центра": f"{zone['center'][1]:.6f}",
-                    "Количество точек": zone['count']
+                    "Количество точек": zone['count'],
+                    "Радиус (м)": radius
                 })
             
             zones_df = pd.DataFrame(zones_data)
             
-            # Отображаем таблицу
+            # Отображение таблицы
             st.dataframe(
                 zones_df,
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "№ зоны": st.column_config.NumberColumn(width="small"),
+                    "№": st.column_config.NumberColumn(width="small"),
                     "Количество точек": st.column_config.NumberColumn(width="medium"),
+                    "Радиус (м)": st.column_config.NumberColumn(width="medium")
                 }
             )
             
-            # Добавляем возможность скачать результаты
+            # Кнопка для скачивания результатов
             csv_data = zones_df.to_csv(index=False, encoding='utf-8-sig')
             st.download_button(
                 label="📥 Скачать результаты (CSV)",
                 data=csv_data,
-                file_name="zones_analysis.csv",
+                file_name="анализ_зон.csv",
                 mime="text/csv",
                 use_container_width=True
             )
     
     elif res.get("status") == "error":
-        st.error(f"Ошибка при обработке данных: {res.get('message', 'Неизвестная ошибка')}")
+        st.error(f"❌ Ошибка при обработке: {res.get('message', 'Неизвестная ошибка')}")
+    
     else:
-        st.warning("Получен неожиданный формат ответа от сервера")
+        st.warning("⚠️ Неизвестный формат ответа от сервера")
 
-# Информация о приложении в футере
+# Футер приложения
 st.markdown("---")
-st.caption("Картограф • Система анализа географических данных • v1.0")
-
+st.caption("""
+<div style='text-align: center; color: #666; font-size: 0.9em;'>
+    Картограф • Система анализа географических данных • Версия 1.0
+</div>
+""", unsafe_allow_html=True)
