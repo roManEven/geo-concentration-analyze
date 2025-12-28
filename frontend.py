@@ -110,14 +110,14 @@ if st.session_state.results:
         else:
             start_pos = [55.75, 37.62]  # Москва по умолчанию
         
-        # КАРТА БЕЗ ЛОГОТИПОВ НА РУССКОМ
+        # СОЗДАНИЕ КАРТЫ С OPENSTREETMAP
         m = folium.Map(
             location=start_pos,
             zoom_start=11,
-            tiles='{x}&y={y}&z={z}',
-            attr=' ',
+            tiles='OpenStreetMap',
+            attr='© OpenStreetMap contributors',
             control_scale=True,
-            attribution_control=False
+            attribution_control=False  # Убираем нижнюю подпись
         )
         
         # Отображение статистики
