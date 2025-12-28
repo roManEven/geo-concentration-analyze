@@ -3,164 +3,122 @@ import requests
 import folium
 from streamlit_folium import st_folium
 import pandas as pd
+from folium.plugins import BeautifyIcon
 
 # --- КОНФИГУРАЦИЯ ---
-# Убедитесь, что бэкенд запущен и ссылка актуальна
+# ВНИМАНИЕ: Убедитесь, что эта ссылка совпадает с той, что выдал ngrok при запуске
 BACKEND_URL = "https://julietta-aquicultural-samara.ngrok-free.dev/analyze"
 
-st.set_page_config(
-    page_title="Картограф концентраций", 
-    layout="wide", 
-    initial_sidebar_state="expanded"
-)
+st.set_page_config(page_title="Картограф зон", layout="wide")
 
 # Инициализация состояния
 if "results" not in st.session_state:
     st.session_state.results = None
 
-st.title("📊 Глобальный анализатор координат")
-st.markdown("""
-    <style>
-    .main { background-color: #f5f7f9; }
-    </style>
-    """, unsafe_allow_html=True)
+st.title("🛰️ Анализатор гео-концентраций")
 
-# --- ПАРАМЕТРЫ В БОКОВОЙ ПАНЕЛИ ---
+# --- САЙДБАР ---
 with st.sidebar:
-    st.header("⚙️ Настройки анализа")
-    radius = st.number_input("Радиус зоны (метры)", min_value=10, max_value=10000, value=500, step=50)
-    min_points = st.number_input("Мин. точек для зоны", min_value=1, max_value=500, value=5)
-    
+    st.header("⚙️ Настройки")
+    radius = st.number_input("Радиус охвата (м)", 10, 5000, 500)
+    min_pts = st.number_input("Мин. точек в зоне", 1, 100, 5)
     st.write("---")
-    if st.button("🗑️ Сбросить всё", use_container_width=True):
+    if st.button("🗑️ Очистить данные"):
         st.session_state.results = None
         st.rerun()
-    
-    st.info("Интерфейс отправляет Excel-файл на ваш локальный сервер через ngrok.")
 
-# --- ЗАГРУЗКА И ОТПРАВКА ---
-uploaded_file = st.file_uploader("Загрузите файл Excel (.xlsx)", type=["xlsx"])
+# --- ЗАГРУЗКА ФАЙЛА ---
+uploaded_file = st.file_uploader("Загрузите Excel (.xlsx) с координатами", type=["xlsx"])
 
 if uploaded_file:
-    if st.button("🚀 Запустить расчет", type="primary", use_container_width=True):
-        with st.spinner("Связь с сервером..."):
+    if st.button("🚀 Провести анализ", type="primary"):
+        with st.spinner("Запрос к вашему ПК через ngrok..."):
             try:
-                # Подготовка файла для отправки
-                files = {
-                    "file": (
-                        uploaded_file.name, 
-                        uploaded_file.getvalue(), 
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-                }
-                payload = {"radius": radius, "min_points": min_points}
-
-                response = requests.post(BACKEND_URL, files=files, data=payload, timeout=60)
-
+                files = {"file": (uploaded_file.name, uploaded_file.getvalue(), 
+                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+                data = {"radius": radius, "min_points": min_pts}
+                
+                response = requests.post(BACKEND_URL, files=files, data=data, timeout=30)
+                
                 if response.status_code == 200:
                     st.session_state.results = response.json()
-                    st.success("✅ Данные успешно обработаны!")
+                    st.success("Данные получены!")
                 else:
-                    st.error(f"❌ Ошибка бэкенда. Код: {response.status_code}")
-                    st.write(response.text)
+                    st.error(f"Сервер на ПК ответил ошибкой: {response.status_code}")
+                    st.info("Проверьте, запущен ли скрипт бэкенда на компьютере.")
             except Exception as e:
-                st.error(f"📡 Не удалось достучаться до сервера: {e}")
+                st.error(f"Не удалось соединиться с ПК: {e}")
 
-# --- ВИЗУАЛИЗАЦИЯ ---
+# --- КАРТА И РЕЗУЛЬТАТЫ ---
 if st.session_state.results:
     res = st.session_state.results
-
+    
     if res.get("status") == "ok":
-        # 1. Метрики
-        total_points = res.get("total_parsed", 0)
-        zones_found = len(res.get("zones", []))
-        
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Всего точек", total_points)
-        col2.metric("Найдено зон", zones_found)
-        col3.metric("Радиус поиска", f"{radius} м")
+        # Метрики сверху
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Обработано точек", res.get("total_parsed", 0))
+        m2.metric("Найдено зон", len(res.get("zones", [])))
+        m3.metric("Радиус", f"{radius} м")
 
-        # 2. Карта
-        st.subheader("🗺️ Интерактивная карта результатов")
-        
-        # Определяем центр карты
-        if zones_found > 0:
-            center_coords = res["zones"][0]["center"]
-        elif total_points > 0 and res.get("all_points"):
-            center_coords = res["all_points"][0]
-        else:
-            center_coords = [55.75, 37.62] # Москва
+        # Настройка карты
+        center = res["zones"][0]["center"] if res.get("zones") else [55.75, 37.62]
+        m = folium.Map(location=center, zoom_start=12, tiles="CartoDB positron")
 
-        m = folium.Map(location=center_coords, zoom_start=12, tiles="CartoDB positron")
-
-        # Отрисовка исходных точек
+        # 1. Отрисовка всех точек (синие мелкие)
         if res.get("all_points"):
             for p in res["all_points"]:
                 folium.CircleMarker(
-                    location=p,
-                    radius=2,
-                    color="#3186cc",
-                    fill=True,
-                    fill_opacity=0.4,
-                    weight=1
+                    location=p, radius=2, color="#3498db", fill=True, weight=1
                 ).add_to(m)
 
-        # Отрисовка найденных зон (кластеров)
+        # 2. Отрисовка Зон (логотипы-маркеры)
         if res.get("zones"):
             for i, zone in enumerate(res["zones"]):
-                lat_lon = zone["center"]
-                count = zone["count"]
-                address = zone.get("address", "Адрес не определен")
-
-                popup_content = f"""
-                <div style="font-family: Arial, sans-serif; width: 200px;">
-                    <h4 style="margin:0 0 10px 0;">Зона №{i+1}</h4>
-                    <b>Точек:</b> {count}<br>
-                    <b>Адрес:</b> {address}
+                # Создаем стильный логотип-маркер
+                b_icon = BeautifyIcon(
+                    icon='star', 
+                    inner_icon_style='color:white;font-size:14px;',
+                    background_color='#e74c3c',
+                    border_color='#c0392b',
+                    border_width=2,
+                    number=i+1
+                )
+                
+                # Попап с информацией
+                html_info = f"""
+                <div style='width:180px; font-family:sans-serif;'>
+                    <b style='color:#e74c3c;'>Зона №{i+1}</b><br>
+                    <b>Точек:</b> {zone['count']}<br>
+                    <b>Адрес:</b> {zone.get('address', 'н/д')}
                 </div>
                 """
                 
-                # Основной маркер (иконка)
                 folium.Marker(
-                    location=lat_lon,
-                    popup=folium.Popup(popup_content, max_width=300),
-                    tooltip=f"Зона {i+1}: {count} точ.",
-                    icon=folium.Icon(color="red", icon="info-sign", prefix="glyphicon")
+                    location=zone["center"],
+                    tooltip=f"Зона {i+1}",
+                    popup=folium.Popup(html_info, max_width=250),
+                    icon=b_icon
                 ).add_to(m)
 
-                # Визуальный круг радиуса
+                # Круг радиуса
                 folium.Circle(
-                    location=lat_lon,
+                    location=zone["center"],
                     radius=radius,
-                    color="red",
-                    weight=1,
+                    color="#e74c3c",
                     fill=True,
-                    fill_color="red",
-                    fill_opacity=0.1
+                    fill_opacity=0.1,
+                    weight=1
                 ).add_to(m)
 
-        # Вывод карты в Streamlit
-        st_folium(m, width="100%", height=600, key="map_output")
+        # Вывод карты
+        st_folium(m, width="100%", height=600, key="main_map")
 
-        # 3. Таблица с данными
-        if res.get("zones"):
-            st.subheader("📝 Детальный список зон")
-            df_display = pd.DataFrame(res["zones"])
-            # Переименуем колонки для красоты
-            df_display.columns = ["Координаты центра", "Количество точек", "Адрес"]
-            st.dataframe(df_display, use_container_width=True)
-            
-            # Кнопка скачивания CSV
-            csv = df_display.to_csv(index=False).encode('utf-8-sig')
-            st.download_button(
-                label="📥 Скачать результат в CSV",
-                data=csv,
-                file_name="result_zones.csv",
-                mime="text/csv",
-            )
+        # Таблица внизу
+        with st.expander("Посмотреть таблицу зон"):
+            df = pd.DataFrame(res["zones"])
+            st.dataframe(df, use_container_width=True)
     else:
-        st.error(f"Ошибка алгоритма: {res.get('message')}")
+        st.error(f"Бэкенд вернул ошибку: {res.get('message')}")
 
-# Подвал
 st.write("---")
-st.caption("Система анализа гео-данных | Streamlit + Folium")
+st.caption("Статус туннеля: ngrok активен")
