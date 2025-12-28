@@ -62,7 +62,7 @@ if st.session_state.results:
         # Создание карты
         # Центрируем на первой точке или на Москве по умолчанию
         start_pos = res["all_points"][0] if res.get("all_points") else [55.75, 37.62]
-        m = folium.Map(location=start_pos, zoom_start=11, tiles='{z}/{x}/{y}.png', attr='Yandex.Maps')
+        m = folium.Map( location=start_pos, zoom_start=11, tiles='{z}/{x}/{y}.png', attr='Yandex.Maps')
 
         # 1. Рисуем все исходные точки (маленькие синие кружки)
         if res.get("all_points"):
@@ -121,6 +121,7 @@ if st.session_state.results:
 st.write("---")
 
 st.caption("Разработка: Python + FastAPI + Streamlit + Ngrok")
+
 
 
 
