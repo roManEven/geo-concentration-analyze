@@ -7,7 +7,7 @@ from folium.plugins import BeautifyIcon
 
 # --- КОНФИГУРАЦИЯ ---
 # ВНИМАНИЕ: Убедитесь, что эта ссылка совпадает с той, что выдал ngrok при запуске
-BACKEND_URL = "https://julietta-aquicultural-samara.ngrok-free.dev/analyze"
+BACKEND_URL = "BACKEND_URL = st.secrets["MY_BACKEND_LINK"] + "/analyze"
 
 st.set_page_config(page_title="Картограф зон", layout="wide")
 
@@ -122,3 +122,4 @@ if st.session_state.results:
 
 st.write("---")
 st.caption("Статус туннеля: ngrok активен")
+
